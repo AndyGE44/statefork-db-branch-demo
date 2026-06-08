@@ -1,0 +1,567 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>StateFork vs DB Branch Rollback</title>
+  <style>
+    :root {
+      --bg: #f7f7f4;
+      --panel: #ffffff;
+      --ink: #202124;
+      --muted: #60646c;
+      --line: #d9d9d2;
+      --green: #146c43;
+      --green-bg: #dff3e8;
+      --red: #9f1d20;
+      --red-bg: #f8d9da;
+      --blue: #1d4f8f;
+      --amber-bg: #fff3cd;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      line-height: 1.45;
+    }
+    header {
+      padding: 28px clamp(18px, 4vw, 48px) 16px;
+      border-bottom: 1px solid var(--line);
+      background: #fff;
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: clamp(26px, 4vw, 42px);
+      letter-spacing: 0;
+    }
+    .caption {
+      max-width: 980px;
+      margin: 0;
+      color: var(--muted);
+      font-size: 15px;
+    }
+    main { padding: 18px clamp(18px, 4vw, 48px) 36px; }
+    .explainer {
+      display: grid;
+      grid-template-columns: minmax(0, 1.05fr) minmax(300px, .95fr);
+      gap: 22px;
+      align-items: start;
+      margin-bottom: 20px;
+      padding-bottom: 18px;
+      border-bottom: 1px solid var(--line);
+    }
+    .explainer h2 {
+      margin: 0 0 8px;
+      font-size: 22px;
+      letter-spacing: 0;
+    }
+    .explainer p {
+      margin: 0 0 12px;
+      color: var(--muted);
+      max-width: 780px;
+    }
+    .story-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 12px;
+    }
+    .story-step {
+      border-left: 3px solid var(--blue);
+      padding: 8px 10px;
+      background: #fff;
+      min-height: 116px;
+    }
+    .story-step strong {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 14px;
+    }
+    .story-step span {
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .change-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+      background: #fff;
+      font-size: 13px;
+    }
+    .change-table th,
+    .change-table td {
+      border: 1px solid var(--line);
+      padding: 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+    .change-table th { background: #f1f3f5; }
+    .diagram-panel {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .diagram-panel img {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+    .diagram-caption {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 18px;
+    }
+    button {
+      border: 1px solid #b9c2ce;
+      border-radius: 6px;
+      background: #fff;
+      color: var(--ink);
+      min-height: 38px;
+      padding: 8px 12px;
+      font: inherit;
+      cursor: pointer;
+    }
+    button.primary { background: var(--blue); color: #fff; border-color: var(--blue); }
+    button:disabled { opacity: .55; cursor: wait; }
+    .timeline { color: var(--muted); font-size: 14px; margin-left: 6px; }
+    .stepper-panel {
+      margin-bottom: 16px;
+    }
+    .stepper-title {
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    .stepper {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 8px;
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+    .stepper-step {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      min-height: 92px;
+      padding: 10px;
+      display: grid;
+      grid-template-rows: auto auto 1fr;
+      gap: 4px;
+    }
+    .stepper-step .number {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: #eef1f5;
+      color: var(--muted);
+      font-weight: 700;
+      font-size: 13px;
+    }
+    .stepper-step strong {
+      font-size: 13px;
+      line-height: 1.25;
+    }
+    .stepper-step small {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.25;
+    }
+    .stepper-step.active {
+      border-color: var(--blue);
+      box-shadow: inset 0 0 0 1px var(--blue);
+    }
+    .stepper-step.active .number {
+      background: var(--blue);
+      color: #fff;
+    }
+    .stepper-step.done .number {
+      background: var(--green);
+      color: #fff;
+    }
+    .stepper-step.error {
+      border-color: var(--red);
+      box-shadow: inset 0 0 0 1px var(--red);
+    }
+    .stepper-step.error .number {
+      background: var(--red);
+      color: #fff;
+    }
+    .value-panel {
+      margin-top: 18px;
+      padding-top: 18px;
+      border-top: 1px solid var(--line);
+    }
+    .value-panel h2 {
+      margin: 0 0 8px;
+      font-size: 22px;
+      letter-spacing: 0;
+    }
+    .value-panel p {
+      margin: 0 0 12px;
+      max-width: 920px;
+      color: var(--muted);
+    }
+    .value-list {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+    .value-list li {
+      background: #fff;
+      border-left: 3px solid var(--green);
+      padding: 10px 12px;
+      min-height: 96px;
+    }
+    .value-list strong {
+      display: block;
+      margin-bottom: 4px;
+    }
+    .value-list span {
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+    .arm {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      min-width: 0;
+    }
+    .arm h2 {
+      margin: 0;
+      padding: 14px 16px;
+      font-size: 20px;
+      border-bottom: 1px solid var(--line);
+      letter-spacing: 0;
+    }
+    .body { padding: 16px; }
+    .verdict {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      padding: 12px;
+      border-radius: 6px;
+      margin-bottom: 14px;
+      background: var(--amber-bg);
+      border: 1px solid #e7d28d;
+      min-height: 64px;
+    }
+    .verdict.pass { background: var(--green-bg); border-color: #9ed7b8; color: var(--green); }
+    .verdict.fail { background: var(--red-bg); border-color: #e7a6a8; color: var(--red); }
+    .verdict strong { font-size: 28px; letter-spacing: 0; }
+    .total { font-size: 16px; color: inherit; text-align: right; }
+    .layers { display: grid; gap: 8px; }
+    .layer {
+      display: grid;
+      grid-template-columns: minmax(130px, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 10px;
+      min-height: 58px;
+    }
+    .layer-name { font-weight: 650; }
+    .layer-raw { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 88px;
+      min-height: 28px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 700;
+      background: var(--red-bg);
+      color: var(--red);
+    }
+    .badge.ok { background: var(--green-bg); color: var(--green); }
+    .meta {
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 13px;
+      overflow-wrap: anywhere;
+    }
+    .log {
+      margin-top: 16px;
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: 8px;
+      padding: 12px;
+      color: var(--muted);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 13px;
+      min-height: 44px;
+      white-space: pre-wrap;
+    }
+    @media (max-width: 860px) {
+      .explainer { grid-template-columns: 1fr; }
+      .story-grid { grid-template-columns: 1fr; }
+      .stepper { grid-template-columns: 1fr; }
+      .value-list { grid-template-columns: 1fr; }
+      .grid { grid-template-columns: 1fr; }
+      .toolbar button { flex: 1 1 150px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>DB Branch Is Not Enough</h1>
+    <p class="caption">Dolt and Neon-style database branches roll back the database correctly. This demo shows the scope problem: an agent retry also depends on generated files, warm cache/process state, and the shell session. A partial rollback can leave those layers drifted; StateFork + Waypoint restores the whole session boundary.</p>
+  </header>
+  <main>
+    <section class="explainer" aria-labelledby="scenario-title">
+      <div>
+        <h2 id="scenario-title">Scenario: a checkout migration crosses three state layers</h2>
+        <p>We start with a tiny e-commerce checkout service. The product price is stored in the database as dollars, the backend reads a filesystem file named <code>schema_version.json</code> to know that unit, and Redis already has a warm cart-total cache.</p>
+        <p>The agent has reached a useful intermediate state: the service is running, the cart is warmed, and the bug or migration target is understood. It wants to compare two candidate fixes. First it tries <strong>Fix A</strong>, a dollars-to-cents migration. If Fix A is not the path it wants, the agent must roll back to the warm baseline before trying <strong>Fix B</strong>.</p>
+        <p>The rollback is the point of the demo. Fix B is only trustworthy if it starts from the same clean branch point, not from a half-restored environment where the database says one thing and the config/cache say another.</p>
+        <table class="change-table" aria-label="Fix A changes by layer">
+          <thead>
+            <tr><th>Layer</th><th>Warm state</th><th>After Fix A</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Database</td><td><code>price = 19.99</code> dollars</td><td><code>price = 1999</code> cents</td></tr>
+            <tr><td>Filesystem config</td><td><code>{"price_unit":"dollars"}</code></td><td><code>{"price_unit":"cents"}</code></td></tr>
+            <tr><td>Redis cache</td><td><code>cart:1:total = 39.98</code></td><td><code>cart:1:total = 3998</code></td></tr>
+          </tbody>
+        </table>
+        <div class="story-grid" aria-label="Demo flow">
+          <div class="story-step"><strong>1. Warm branch point</strong><span>The checkout is correct at $39.98 and all three layers say dollars.</span></div>
+          <div class="story-step"><strong>2. Try Fix A</strong><span>The migration is internally consistent: DB, config, and cache all switch to cents.</span></div>
+          <div class="story-step"><strong>3. Rewind before Fix B</strong><span>The agent wants to abandon Fix A and retry from the same warm state.</span></div>
+          <div class="story-step"><strong>4. Trust check</strong><span>Dolt-only rollback leaves drift; StateFork/Waypoint restores the whole session boundary.</span></div>
+        </div>
+      </div>
+      <figure class="diagram-panel">
+        <img src="/assets/statefork_vs_db_branch_scope.svg" alt="StateFork and Waypoint cover filesystem, backend process, Redis cache, and database, while a branchable database boundary covers only the database.">
+        <figcaption class="diagram-caption">The problem is rollback scope. A database branch can be correct and still be too narrow for an agent retry that depends on files, processes, and cache.</figcaption>
+      </figure>
+    </section>
+
+    <section class="stepper-panel" aria-labelledby="process-title">
+      <div class="stepper-title" id="process-title">Process</div>
+      <ol class="stepper" id="stepper">
+        <li class="stepper-step" data-step="0"><span class="number">1</span><strong>Setup &amp; warm</strong><small>Reach the useful baseline.</small></li>
+        <li class="stepper-step" data-step="1"><span class="number">2</span><strong>Snapshot</strong><small>Save the branch point.</small></li>
+        <li class="stepper-step" data-step="2"><span class="number">3</span><strong>Try Fix A</strong><small>Migrate all layers to cents.</small></li>
+        <li class="stepper-step" data-step="3"><span class="number">4</span><strong>Rollback</strong><small>Return before trying Fix B.</small></li>
+        <li class="stepper-step" data-step="4"><span class="number">5</span><strong>Check Fix B baseline</strong><small>Is the retry state trustworthy?</small></li>
+      </ol>
+    </section>
+
+    <div class="toolbar">
+      <button class="primary" id="next">Run Next Step</button>
+      <button id="setup">1 Setup &amp; Warm</button>
+      <button id="snapshot">2 Snapshot</button>
+      <button id="fix">3 Apply Fix A</button>
+      <button id="rollback">4 Roll Back</button>
+      <button id="checkout">5 Check Fix B Baseline</button>
+      <button id="reset">Reset</button>
+      <span class="timeline" id="timeline">Ready.</span>
+    </div>
+
+    <section class="grid">
+      <article class="arm" id="arm-db">
+        <h2>Branchable DB Only (Dolt/Neon Analog)</h2>
+        <div class="body"></div>
+      </article>
+      <article class="arm" id="arm-statefork">
+        <h2>StateFork + Waypoint</h2>
+        <div class="body"></div>
+      </article>
+    </section>
+    <div class="log" id="log">Click setup to initialize both arms.</div>
+
+    <section class="value-panel" aria-labelledby="value-title">
+      <h2 id="value-title">What StateFork adds at the end</h2>
+      <p>This demo follows the rewind-button pattern: snapshot a valuable mid-task state, try Fix A, restore, then try Fix B from the same baseline. StateFork is useful because it treats the branch point as the working session, not just the database table.</p>
+      <ul class="value-list">
+        <li><strong>Trustworthy retries</strong><span>Fix B starts from DB, config, cache, shell, and process state that agree with each other.</span></li>
+        <li><strong>Less wasted setup</strong><span>The agent does not need to rebuild the service, rewarm caches, and rediscover the same context for every attempt.</span></li>
+        <li><strong>Real exploration</strong><span>The agent can compare candidate paths from a shared checkpoint and keep the branch that works.</span></li>
+      </ul>
+    </section>
+  </main>
+<script>
+const arms = ["db", "statefork"];
+const bodyFor = arm => document.querySelector(`#arm-${arm} .body`);
+const log = document.querySelector("#log");
+const timeline = document.querySelector("#timeline");
+const stepperItems = Array.from(document.querySelectorAll(".stepper-step"));
+let nextIndex = 0;
+const steps = ["setupWarm", "snapshot", "fix", "rollback", "checkout"];
+
+const emptyState = arm => ({
+  arm,
+  verdict: "WAIT",
+  display_total_money: "n/a",
+  expected_total_money: "$39.98",
+  phase: "idle",
+  backend: arm === "db" ? "Dolt branch rollback only" : "StateFork + Waypoint whole-session restore",
+  layers: [
+    {name: "Database price unit", value: "not run", raw: "", ok: false},
+    {name: "schema_version.json", value: "not run", raw: "", ok: false},
+    {name: "Redis cached total", value: "not run", raw: "", ok: false}
+  ]
+});
+
+function render(arm, data) {
+  const verdictClass = data.verdict === "PASS" ? "pass" : data.verdict === "FAIL" ? "fail" : "";
+  const layers = (data.layers || []).map(layer => `
+    <div class="layer">
+      <div>
+        <div class="layer-name">${escapeHtml(layer.name)}</div>
+        <div class="layer-raw">raw: ${escapeHtml(layer.raw ?? "n/a")} · expected: ${escapeHtml(layer.expected ?? "pending")}</div>
+      </div>
+      <span class="badge ${layer.ok ? "ok" : ""}">${escapeHtml(layer.value ?? "missing")}</span>
+    </div>`).join("");
+  bodyFor(arm).innerHTML = `
+    <div class="verdict ${verdictClass}">
+      <strong>${escapeHtml(data.verdict || "WAIT")}</strong>
+      <div class="total">checkout ${escapeHtml(data.display_total_money || "n/a")}<br>expected ${escapeHtml(data.expected_total_money || "$39.98")}</div>
+    </div>
+    <div class="layers">${layers}</div>
+    <div class="meta">phase: ${escapeHtml(data.phase || "idle")}<br>backend: ${escapeHtml(data.backend || "")}<br>${escapeHtml(data.note || "")}</div>`;
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>'"]/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;","\"":"&quot;"}[ch]));
+}
+
+async function post(path, arm) {
+  const response = await fetch(`${path}?arm=${arm}`, {method: "POST"});
+  const payload = await response.json();
+  if (!response.ok) throw new Error(`${arm}: ${payload.detail || response.statusText}`);
+  return payload;
+}
+
+async function getState(arm) {
+  const response = await fetch(`/state?arm=${arm}`);
+  const payload = await response.json();
+  if (!response.ok) throw new Error(`${arm}: ${payload.detail || response.statusText}`);
+  return payload;
+}
+
+async function runForBoth(label, fn, stepIndex) {
+  setBusy(true);
+  if (Number.isInteger(stepIndex)) updateStepper(stepIndex);
+  timeline.textContent = label;
+  log.textContent = `${label} ...`;
+  try {
+    const results = [];
+    for (const arm of arms) {
+      const payload = await fn(arm);
+      render(arm, payload);
+      results.push(`${arm}:${payload.verdict}`);
+    }
+    if (Number.isInteger(stepIndex)) {
+      updateStepper(stepIndex);
+      nextIndex = Math.min(stepIndex + 1, steps.length - 1);
+    }
+    log.textContent = `${label} complete - ${results.join(" · ")}`;
+  } catch (error) {
+    if (Number.isInteger(stepIndex)) markStepError(stepIndex);
+    log.textContent = error.message;
+  } finally {
+    setBusy(false);
+  }
+}
+
+function updateStepper(activeIndex) {
+  stepperItems.forEach((item, index) => {
+    item.classList.toggle("done", activeIndex >= 0 && index < activeIndex);
+    item.classList.toggle("active", index === activeIndex);
+    item.classList.toggle("error", false);
+  });
+}
+
+function markStepError(activeIndex) {
+  updateStepper(activeIndex);
+  const item = stepperItems[activeIndex];
+  if (item) item.classList.add("error");
+}
+
+function setBusy(busy) {
+  document.querySelectorAll("button").forEach(button => button.disabled = busy);
+}
+
+async function setupWarm() {
+  await runForBoth("Step 1: setup and warm the checkout", async arm => {
+    await post("/setup", arm);
+    return await post("/warm", arm);
+  }, 0);
+}
+
+async function snapshot() {
+  await runForBoth("Step 2: snapshot the warm branch point", arm => post("/snapshot", arm), 1);
+}
+
+async function fix() {
+  await runForBoth("Step 3: try Fix A, the dollars-to-cents migration", arm => post("/fix_a", arm), 2);
+}
+
+async function rollback() {
+  await runForBoth("Step 4: roll back before trying Fix B", arm => post("/rollback", arm), 3);
+}
+
+async function checkout() {
+  await runForBoth("Step 5: check whether Fix B would start from a clean baseline", arm => getState(arm), 4);
+}
+
+async function reset() {
+  setBusy(true);
+  try {
+    await fetch("/reset", {method: "POST"});
+    arms.forEach(arm => render(arm, emptyState(arm)));
+    nextIndex = 0;
+    updateStepper(-1);
+    timeline.textContent = "Ready.";
+    log.textContent = "Reset complete.";
+  } finally {
+    setBusy(false);
+  }
+}
+
+document.querySelector("#setup").addEventListener("click", setupWarm);
+document.querySelector("#snapshot").addEventListener("click", snapshot);
+document.querySelector("#fix").addEventListener("click", fix);
+document.querySelector("#rollback").addEventListener("click", rollback);
+document.querySelector("#checkout").addEventListener("click", checkout);
+document.querySelector("#reset").addEventListener("click", reset);
+document.querySelector("#next").addEventListener("click", async () => {
+  const step = steps[nextIndex] || "checkout";
+  await ({setupWarm, snapshot, fix, rollback, checkout})[step]();
+});
+
+updateStepper(-1);
+arms.forEach(arm => render(arm, emptyState(arm)));
+</script>
+</body>
+</html>
