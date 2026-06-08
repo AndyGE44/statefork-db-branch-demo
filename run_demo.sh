@@ -47,6 +47,13 @@ Sessions dir:      ${CHECKPOINT_SESSIONS_DIR}
 
 Use SSH forwarding from your laptop if needed:
   ssh -N -L ${port}:127.0.0.1:${port} sf-exp
+
+Stop the VM service:
+  press Ctrl-C in this terminal, or if it is running in the demo tmux session:
+  tmux kill-session -t statefork-db-demo
+
+Stop the laptop tunnel:
+  press Ctrl-C in the ssh forwarding terminal.
 EOF
 
 exec sudo -E "${PWD}/.venv/bin/uvicorn" statefork_demo.app:app --host "$host" --port "$port"

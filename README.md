@@ -103,6 +103,28 @@ ssh -N -L 8015:127.0.0.1:8015 sf-exp
 
 Then open `http://127.0.0.1:8015` locally.
 
+## Stop The Web Demo
+
+If `./run_demo.sh` is running in the foreground, press `Ctrl-C` in that VM
+terminal.
+
+If the demo is running in the VM tmux session used for this repo, stop it with:
+
+```bash
+tmux kill-session -t statefork-db-demo
+```
+
+If the service was started another way and is still listening on port `8015`,
+stop the listener on the VM with:
+
+```bash
+sudo lsof -tiTCP:8015 -sTCP:LISTEN | xargs -r sudo kill
+```
+
+If you created the SSH forwarding tunnel from your laptop, stop that local
+`ssh -N -L 8015:127.0.0.1:8015 sf-exp` command with `Ctrl-C` in the tunnel
+terminal.
+
 Click through:
 
 1. Setup & Warm
