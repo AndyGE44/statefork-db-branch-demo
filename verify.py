@@ -22,11 +22,21 @@ def run_db(project_root: Path) -> dict:
     final = arm.rollback()
     final = arm.checkout()
     assert after_fix["verdict"] == "PASS", after_fix
+    assert after_fix["display_total_money"] == "$49.98", after_fix
+    assert after_fix["product"]["db_source_price_money"] == "$24.99", after_fix
+    assert after_fix["product"]["indexed_price_money"] == "$24.99", after_fix
+    assert after_fix["product"]["index_in_sync"] is True, after_fix
+
     assert final["verdict"] == "FAIL", final
     assert final["db_unit"] == "dollars", final
     assert final["config_unit"] == "cents", final
     assert final["cache_unit"] == "cents", final
     assert final["display_total_money"] == "$0.40", final
+    assert final["product"]["db_name"] == "Wireless Mouse", final
+    assert final["product"]["db_source_price_money"] == "$19.99", final
+    assert final["product"]["indexed_name"] == "Wireless Mouse Pro", final
+    assert final["product"]["indexed_price_money"] == "$24.99", final
+    assert final["product"]["index_in_sync"] is False, final
     return final
 
 
@@ -40,11 +50,21 @@ def run_statefork(project_root: Path) -> dict:
         final = arm.rollback()
         final = arm.checkout()
         assert after_fix["verdict"] == "PASS", after_fix
+        assert after_fix["display_total_money"] == "$49.98", after_fix
+        assert after_fix["product"]["db_source_price_money"] == "$24.99", after_fix
+        assert after_fix["product"]["indexed_price_money"] == "$24.99", after_fix
+        assert after_fix["product"]["index_in_sync"] is True, after_fix
+
         assert final["verdict"] == "PASS", final
         assert final["db_unit"] == "dollars", final
         assert final["config_unit"] == "dollars", final
         assert final["cache_unit"] == "dollars", final
         assert final["display_total_money"] == "$39.98", final
+        assert final["product"]["db_name"] == "Wireless Mouse", final
+        assert final["product"]["db_source_price_money"] == "$19.99", final
+        assert final["product"]["indexed_name"] == "Wireless Mouse", final
+        assert final["product"]["indexed_price_money"] == "$19.99", final
+        assert final["product"]["index_in_sync"] is True, final
         return final
     finally:
         arm.cleanup()
@@ -60,10 +80,26 @@ def main() -> None:
     os.environ.setdefault("WAYPOINT_PRESERVE_SESSION_ON_CLEANUP", "true")
 
     db = run_db(project_root)
-    print("DB-only arm:", db["verdict"], db["display_total_money"], f"db={db['db_unit']}", f"config={db['config_unit']}", f"cache={db['cache_unit']}")
+    print(
+        "DB-only arm:",
+        db["verdict"],
+        db["display_total_money"],
+        f"db={db['db_unit']}",
+        f"config={db['config_unit']}",
+        f"cache={db['cache_unit']}",
+        f"index={db['product']['indexed_price_money']} vs source={db['product']['db_source_price_money']}",
+    )
     sf = run_statefork(project_root)
-    print("StateFork arm:", sf["verdict"], sf["display_total_money"], f"db={sf['db_unit']}", f"config={sf['config_unit']}", f"cache={sf['cache_unit']}")
-    print("Verification reproduced the intended contrast: DB-only FAIL, StateFork PASS.")
+    print(
+        "StateFork arm:",
+        sf["verdict"],
+        sf["display_total_money"],
+        f"db={sf['db_unit']}",
+        f"config={sf['config_unit']}",
+        f"cache={sf['cache_unit']}",
+        f"index={sf['product']['indexed_price_money']} vs source={sf['product']['db_source_price_money']}",
+    )
+    print("Verification reproduced the intended contrast: DB-only FAIL with stale index, StateFork PASS with restored index.")
 
 
 if __name__ == "__main__":

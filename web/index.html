@@ -273,6 +273,51 @@
     .verdict.fail { background: var(--red-bg); border-color: #e7a6a8; color: var(--red); }
     .verdict strong { font-size: 28px; letter-spacing: 0; }
     .total { font-size: 16px; color: inherit; text-align: right; }
+    .storefront {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      margin-bottom: 14px;
+      padding: 12px;
+    }
+    .storefront h3 {
+      margin: 0 0 8px;
+      font-size: 16px;
+      letter-spacing: 0;
+    }
+    .store-columns {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .store-card {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 10px;
+      min-height: 98px;
+      background: #fafafa;
+    }
+    .store-card strong {
+      display: block;
+      font-size: 13px;
+      margin-bottom: 6px;
+      color: var(--muted);
+    }
+    .store-item {
+      font-weight: 700;
+      overflow-wrap: anywhere;
+    }
+    .store-price {
+      font-size: 22px;
+      margin-top: 4px;
+    }
+    .store-note {
+      margin-top: 8px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .storefront.store-ok .store-note { color: var(--green); }
+    .storefront.store-bad .store-note { color: var(--red); }
     .layers { display: grid; gap: 8px; }
     .layer {
       display: grid;
@@ -325,6 +370,7 @@
       .story-grid { grid-template-columns: 1fr; }
       .stepper { grid-template-columns: 1fr; }
       .value-list { grid-template-columns: 1fr; }
+      .store-columns { grid-template-columns: 1fr; }
       .grid { grid-template-columns: 1fr; }
       .toolbar button { flex: 1 1 150px; }
     }
@@ -333,15 +379,15 @@
 <body>
   <header>
     <h1>DB Branch Is Not Enough</h1>
-    <p class="caption">Dolt and Neon-style database branches roll back the database correctly. This demo shows the scope problem: an agent retry also depends on generated files, warm cache/process state, and the shell session. A partial rollback can leave those layers drifted; StateFork + Waypoint restores the whole session boundary.</p>
+    <p class="caption">Dolt and Neon-style database branches roll back the database correctly. This demo shows the scope problem: an agent retry also depends on generated files, warm cache/process state, a search index, and the shell session. A partial rollback can leave those layers drifted; StateFork + Waypoint restores the whole session boundary.</p>
   </header>
   <main>
     <section class="explainer" aria-labelledby="scenario-title">
       <div>
-        <h2 id="scenario-title">Scenario: a checkout migration crosses three state layers</h2>
-        <p>We start with a tiny e-commerce checkout service. The product price is stored in the database as dollars, the backend reads a filesystem file named <code>schema_version.json</code> to know that unit, and Redis already has a warm cart-total cache.</p>
+        <h2 id="scenario-title">Scenario: a checkout migration crosses four state layers</h2>
+        <p>We start with a tiny e-commerce checkout service. The product price is stored in the database as dollars, the backend reads a filesystem file named <code>schema_version.json</code> to know that unit, and Redis already has a warm cart-total cache. A separate SQLite FTS search index powers the storefront listing, outside the Dolt checkout.</p>
         <p>The agent has reached a useful intermediate state: the service is running, the cart is warmed, and the bug or migration target is understood. It wants to compare two candidate fixes. First it tries <strong>Fix A</strong>, a dollars-to-cents migration. If Fix A is not the path it wants, the agent must roll back to the warm baseline before trying <strong>Fix B</strong>.</p>
-        <p>The rollback is the point of the demo. Fix B is only trustworthy if it starts from the same clean branch point, not from a half-restored environment where the database says one thing and the config/cache say another.</p>
+        <p>The rollback is the point of the demo. Fix B is only trustworthy if it starts from the same clean branch point, not from a half-restored environment where the database says one thing and the config, cache, or search index say another.</p>
         <table class="change-table" aria-label="Fix A changes by layer">
           <thead>
             <tr><th>Layer</th><th>Warm state</th><th>After Fix A</th></tr>
@@ -349,14 +395,15 @@
           <tbody>
             <tr><td>Database</td><td><code>price = 19.99</code> dollars</td><td><code>price = 1999</code> cents</td></tr>
             <tr><td>Filesystem config</td><td><code>{"price_unit":"dollars"}</code></td><td><code>{"price_unit":"cents"}</code></td></tr>
-            <tr><td>Redis cache</td><td><code>cart:1:total = 39.98</code></td><td><code>cart:1:total = 3998</code></td></tr>
+            <tr><td>Redis cache</td><td><code>cart:1:total = 39.98</code></td><td><code>cart:1:total = 4998</code></td></tr>
+            <tr><td>Search index</td><td><code>Wireless Mouse $19.99</code></td><td><code>Wireless Mouse Pro $24.99</code></td></tr>
           </tbody>
         </table>
         <div class="story-grid" aria-label="Demo flow">
-          <div class="story-step"><strong>1. Warm branch point</strong><span>The checkout is correct at $39.98 and all three layers say dollars.</span></div>
-          <div class="story-step"><strong>2. Try Fix A</strong><span>The migration is internally consistent: DB, config, and cache all switch to cents.</span></div>
+          <div class="story-step"><strong>1. Warm branch point</strong><span>The checkout is correct at $39.98 and DB, config, cache, and search index all agree.</span></div>
+          <div class="story-step"><strong>2. Try Fix A</strong><span>The migration is internally consistent: DB, config, cache, and search index all switch to the new catalog state.</span></div>
           <div class="story-step"><strong>3. Rewind before Fix B</strong><span>The agent wants to abandon Fix A and retry from the same warm state.</span></div>
-          <div class="story-step"><strong>4. Trust check</strong><span>Dolt-only rollback leaves drift; StateFork/Waypoint restores the whole session boundary.</span></div>
+          <div class="story-step"><strong>4. Trust check</strong><span>Dolt-only rollback leaves config, cache, and search drift; StateFork/Waypoint restores the whole session boundary.</span></div>
         </div>
       </div>
       <figure class="diagram-panel">
@@ -370,7 +417,7 @@
       <ol class="stepper" id="stepper">
         <li class="stepper-step" data-step="0"><span class="number">1</span><strong>Setup &amp; warm</strong><small>Reach the useful baseline.</small></li>
         <li class="stepper-step" data-step="1"><span class="number">2</span><strong>Snapshot</strong><small>Save the branch point.</small></li>
-        <li class="stepper-step" data-step="2"><span class="number">3</span><strong>Try Fix A</strong><small>Migrate all layers to cents.</small></li>
+        <li class="stepper-step" data-step="2"><span class="number">3</span><strong>Try Fix A</strong><small>Migrate catalog, cache, config, and index.</small></li>
         <li class="stepper-step" data-step="3"><span class="number">4</span><strong>Rollback</strong><small>Return before trying Fix B.</small></li>
         <li class="stepper-step" data-step="4"><span class="number">5</span><strong>Check Fix B baseline</strong><small>Is the retry state trustworthy?</small></li>
       </ol>
@@ -403,7 +450,7 @@
       <h2 id="value-title">What StateFork adds at the end</h2>
       <p>This demo follows the rewind-button pattern: snapshot a valuable mid-task state, try Fix A, restore, then try Fix B from the same baseline. StateFork is useful because it treats the branch point as the working session, not just the database table.</p>
       <ul class="value-list">
-        <li><strong>Trustworthy retries</strong><span>Fix B starts from DB, config, cache, shell, and process state that agree with each other.</span></li>
+        <li><strong>Trustworthy retries</strong><span>Fix B starts from DB, config, cache, search index, shell, and process state that agree with each other.</span></li>
         <li><strong>Less wasted setup</strong><span>The agent does not need to rebuild the service, rewarm caches, and rediscover the same context for every attempt.</span></li>
         <li><strong>Real exploration</strong><span>The agent can compare candidate paths from a shared checkpoint and keep the branch that works.</span></li>
       </ul>
@@ -428,12 +475,25 @@ const emptyState = arm => ({
   layers: [
     {name: "Database price unit", value: "not run", raw: "", ok: false},
     {name: "schema_version.json", value: "not run", raw: "", ok: false},
-    {name: "Redis cached total", value: "not run", raw: "", ok: false}
-  ]
+    {name: "Redis cached total", value: "not run", raw: "", ok: false},
+    {name: "Search index", value: "not run", raw: "", ok: false}
+  ],
+  product: {
+    db_name: "not run",
+    db_source_price_money: "n/a",
+    indexed_name: "not run",
+    indexed_price_money: "n/a",
+    index_in_sync: false
+  }
 });
 
 function render(arm, data) {
   const verdictClass = data.verdict === "PASS" ? "pass" : data.verdict === "FAIL" ? "fail" : "";
+  const product = data.product || {};
+  const storefrontClass = product.index_in_sync ? "store-ok" : "store-bad";
+  const storeNote = product.index_in_sync
+    ? "Search listing and DB product detail agree."
+    : "Search listing and DB product detail disagree: this is stale derived state.";
   const layers = (data.layers || []).map(layer => `
     <div class="layer">
       <div>
@@ -446,6 +506,22 @@ function render(arm, data) {
     <div class="verdict ${verdictClass}">
       <strong>${escapeHtml(data.verdict || "WAIT")}</strong>
       <div class="total">checkout ${escapeHtml(data.display_total_money || "n/a")}<br>expected ${escapeHtml(data.expected_total_money || "$39.98")}</div>
+    </div>
+    <div class="storefront ${storefrontClass}">
+      <h3>Storefront read paths</h3>
+      <div class="store-columns">
+        <div class="store-card">
+          <strong>Search listing (index only)</strong>
+          <div class="store-item">${escapeHtml(product.indexed_name || "missing")}</div>
+          <div class="store-price">${escapeHtml(product.indexed_price_money || "n/a")}</div>
+        </div>
+        <div class="store-card">
+          <strong>Product detail (DB source)</strong>
+          <div class="store-item">${escapeHtml(product.db_name || "missing")}</div>
+          <div class="store-price">${escapeHtml(product.db_source_price_money || "n/a")}</div>
+        </div>
+      </div>
+      <div class="store-note">${escapeHtml(storeNote)}</div>
     </div>
     <div class="layers">${layers}</div>
     <div class="meta">phase: ${escapeHtml(data.phase || "idle")}<br>backend: ${escapeHtml(data.backend || "")}<br>${escapeHtml(data.note || "")}</div>`;
