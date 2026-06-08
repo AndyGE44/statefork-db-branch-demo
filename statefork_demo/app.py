@@ -83,6 +83,26 @@ def checkout(arm: str = Query(..., pattern="^(db|statefork)$"), cart_id: int = 1
     return call_arm(arm, "checkout")
 
 
+@app.get("/search")
+def search(arm: str = Query(..., pattern="^(db|statefork)$"), q: str = "mouse") -> JSONResponse:
+    try:
+        return JSONResponse(arm_for(arm).search(q))
+    except (DemoError, StateForkDemoError) as exc:
+        return JSONResponse({"detail": str(exc), "arm": arm, "action": "search"}, status_code=400)
+    except Exception as exc:
+        return JSONResponse({"detail": f"Unexpected error: {exc}", "arm": arm, "action": "search"}, status_code=500)
+
+
+@app.get("/product/{product_id}")
+def product(product_id: int, arm: str = Query(..., pattern="^(db|statefork)$")) -> JSONResponse:
+    try:
+        return JSONResponse(arm_for(arm).product(product_id))
+    except (DemoError, StateForkDemoError) as exc:
+        return JSONResponse({"detail": str(exc), "arm": arm, "action": "product"}, status_code=400)
+    except Exception as exc:
+        return JSONResponse({"detail": f"Unexpected error: {exc}", "arm": arm, "action": "product"}, status_code=500)
+
+
 @app.get("/state")
 def state(arm: str = Query(..., pattern="^(db|statefork)$")) -> JSONResponse:
     return call_arm(arm, "state")

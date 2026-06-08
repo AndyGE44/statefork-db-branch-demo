@@ -8,8 +8,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable, Iterator
 
-from .logic import build_status
-from . import redis_wire
+from .logic import EXPECTED_TOTAL, FIX_A_EXPECTED_TOTAL, PROBE_PRODUCT_ID, build_status
+from . import redis_wire, search_index
 
 
 class StateForkDemoError(RuntimeError):
@@ -32,6 +32,8 @@ class StateForkArm:
         self.snapshot_id: str | None = None
         self.phase = "idle"
         self.expected_unit = "dollars"
+        self.expected_total = EXPECTED_TOTAL
+        self.expected_total = EXPECTED_TOTAL
 
     def cleanup(self) -> None:
         if self.manager is not None:
@@ -52,6 +54,7 @@ class StateForkArm:
         self._session_op("setup")
         self.phase = "setup"
         self.expected_unit = "dollars"
+        self.expected_total = EXPECTED_TOTAL
         return self.state()
 
     def warm(self) -> dict[str, Any]:
@@ -59,6 +62,7 @@ class StateForkArm:
         self._session_op("warm")
         self.phase = "warm"
         self.expected_unit = "dollars"
+        self.expected_total = EXPECTED_TOTAL
         return self.state()
 
     def snapshot(self) -> dict[str, Any]:
@@ -69,6 +73,7 @@ class StateForkArm:
         self.snapshot_id = str(snapshot_id)
         self.phase = "snapshot"
         self.expected_unit = "dollars"
+        self.expected_total = EXPECTED_TOTAL
         return self.state()
 
     def fix_a(self) -> dict[str, Any]:
@@ -76,6 +81,7 @@ class StateForkArm:
         self._session_op("fix_a")
         self.phase = "fix_a"
         self.expected_unit = "cents"
+        self.expected_total = FIX_A_EXPECTED_TOTAL
         return self.state()
 
     def rollback(self) -> dict[str, Any]:
@@ -87,6 +93,7 @@ class StateForkArm:
             raise StateForkDemoError(f"StateFork restore failed for {self.snapshot_id}")
         self.phase = "rollback"
         self.expected_unit = "dollars"
+        self.expected_total = EXPECTED_TOTAL
         return self.state()
 
     def checkout(self) -> dict[str, Any]:
@@ -97,16 +104,27 @@ class StateForkArm:
         raw = self._session_op("state")
         return build_status(
             arm="statefork",
-            backend="StateFork + Waypoint whole-session restore (SQLite DB)",
+            backend="StateFork + Waypoint whole-session restore (SQLite DB + FTS index)",
             phase=self.phase,
             expected_unit=self.expected_unit,
+            expected_total=self.expected_total,
             db_raw_total=raw.get("db_raw_total"),
             product_raw_price=raw.get("product_raw_price"),
+            product_name=raw.get("product_name"),
             config_unit=raw.get("config_unit", "missing"),
             cached_raw=raw.get("cached_raw"),
+            indexed_product=raw.get("indexed_product"),
             snapshot_id=self.snapshot_id,
-            note="The StateFork arm uses SQLite because Dolt daemon checkpointing was not assumed; Waypoint restores DB file, schema file, shell, and Redis process together.",
+            note="The StateFork arm uses SQLite because Dolt daemon checkpointing was not assumed; Waypoint restores DB file, schema file, Redis, and the FTS search index together.",
         )
+
+    def search(self, query: str = search_index.PROBE_QUERY) -> dict[str, Any]:
+        payload = self._session_op("search", query=query)
+        return {"arm": "statefork", **payload}
+
+    def product(self, product_id: int = PROBE_PRODUCT_ID) -> dict[str, Any]:
+        payload = self._session_op("product", product_id=product_id)
+        return {"arm": "statefork", **payload}
 
     def _require_manager(self):
         if self.manager is None:
@@ -134,12 +152,23 @@ class StateForkArm:
             )
         )
 
-    def _session_op(self, name: str) -> dict[str, Any]:
+    def _session_op(
+        self,
+        name: str,
+        *,
+        query: str | None = None,
+        product_id: int | None = None,
+    ) -> dict[str, Any]:
         manager = self._require_manager()
+        extra = ""
+        if query is not None:
+            extra += f" --query {shlex.quote(query)}"
+        if product_id is not None:
+            extra += f" --product-id {int(product_id)}"
         cmd = (
             "cd /demo && "
             f"python3 -m statefork_demo.session_ops {shlex.quote(name)} "
-            f"--port {int(self.redis_port)}"
+            f"--port {int(self.redis_port)}{extra}"
         )
         rc, stdout, stderr = self._call_statefork(lambda: manager.exec_command(cmd, timeout=20))
         if rc != 0:
